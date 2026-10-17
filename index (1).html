@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OS Page Replacement Lab</title>
+<style>
+:root{font-family:Arial,Helvetica,sans-serif;color:#eaf0fb;background:#0b1220}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at top,#172747,#0b1220 58%);min-height:100vh}
+main{max-width:1100px;margin:auto;padding:28px 18px 48px}
+header{margin-bottom:22px}
+h1{font-size:clamp(1.8rem,4vw,2.7rem);margin:0 0 8px}
+h2{margin-top:0}
+p{color:#aab8cf;line-height:1.55}
+.panel{background:#121d30;border:1px solid #2a3b56;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 12px 35px #0002}
+.controls{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px}
+label{display:block;font-size:.9rem;color:#c4d0e3;margin-bottom:7px}
+input,select,button{font:inherit;border-radius:9px;border:1px solid #3a4c68;padding:11px;background:#0c1525;color:#f3f7ff;width:100%}
+button{cursor:pointer;background:#2563eb;border-color:#2563eb;font-weight:650}
+button.secondary{background:#1b2940;border-color:#3a4c68}
+button:disabled{opacity:.45;cursor:not-allowed}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
+.actions button{width:auto;min-width:100px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat{padding:13px;background:#0c1525;border:1px solid #2a3b56;border-radius:12px}
+.stat small{display:block;color:#9fb0ca}
+.stat strong{font-size:1.5rem;display:block;margin-top:4px}
+.frames{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+.frame{min-width:90px;flex:1;text-align:center;border-radius:12px;padding:15px 8px;background:#1c2c45;border:1px solid #415675}
+.frame .num{font-size:1.7rem;font-weight:800}
+.frame small{display:block;color:#aab8cf}
+.pill{display:inline-block;padding:5px 9px;border-radius:999px;font-size:.8rem;font-weight:700}
+.hit{background:#14532d;color:#bbf7d0}
+.fault{background:#7f1d1d;color:#fecaca}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{padding:10px;border-bottom:1px solid #2a3b56;text-align:center}
+th{color:#aab8cf}
+.current{background:#1c2d47}
+canvas{width:100%;max-height:280px}
+.note{font-size:.85rem;color:#93a5bf}
+.algo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.algo{background:#0c1525;border:1px solid #2a3b56;padding:14px;border-radius:12px}
+.algo strong{display:block;font-size:1.05rem}
+.algo span{color:#9fb0ca;font-size:.9rem}
+@media(max-width:700px){.controls{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}.algo-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<h1>OS Page Replacement Lab</h1>
+<p>Explore how virtual-memory page replacement works. Change the reference string, choose a policy, and step through every memory access.</p>
+</header>
+
+<section class="panel">
+<div class="controls">
+<div>
+<label for="refs">Page-reference string (comma or space separated)</label>
+<input id="refs" value="7, 0, 1, 2, 0, 3, 0, 4, 2, 3, 0, 3, 2">
+</div>
+<div>
+<label for="framesCount">Number of frames</label>
+<select id="framesCount">
+<option value="3">3</option><option value="2">2</option><option value="4">4</option><option value="5">5</option>
+</select>
+</div>
+<div>
+<label for="algorithm">Algorithm</label>
+<select id="algorithm">
+<option value="FIFO">FIFO</option><option value="LRU">LRU</option><option value="OPT">Optimal</option>
+</select>
+</div>
+</div>
+<div class="actions">
+<button id="run">Run simulation</button>
+<button class="secondary" id="prev">← Previous</button>
+<button class="secondary" id="next">Next →</button>
+<button class="secondary" id="play">▶ Play</button>
+<button class="secondary" id="reset">Reset</button>
+</div>
+<p class="note" id="message" aria-live="polite">Ready. Select Run simulation to calculate the steps.</p>
+</section>
+
+<section class="panel">
+<h2>Memory at current step</h2>
+<div class="stats">
+<div class="stat"><small>Current step</small><strong id="stepStat">0 / 13</strong></div>
+<div class="stat"><small>Page faults</small><strong id="faultStat">0</strong></div>
+<div class="stat"><small>Page hits</small><strong id="hitStat">0</strong></div>
+<div class="stat"><small>Fault rate</small><strong id="rateStat">0%</strong></div>
+</div>
+<div class="frames" id="frames"></div>
+<div id="status"></div>
+</section>
+
+<section class="panel">
+<h2>Step-by-step history</h2>
+<div style="overflow-x:auto">
+<table>
+<thead><tr><th>Step</th><th>Requested page</th><th>Frames after request</th><th>Result</th><th>Replaced page</th></tr></thead>
+<tbody id="history"></tbody>
+</table>
+</div>
+</section>
+
+<section class="panel">
+<h2>Compare algorithms</h2>
+<div class="algo-grid" id="comparison"></div>
+<canvas id="chart" width="900" height="260" aria-label="Bar chart comparing page faults"></canvas>
+<p class="note">Optimal replaces the page whose next use is farthest in the future (or that is never used again). It is a theoretical benchmark because future requests must be known.</p>
+</section>
+<footer class="note">Educational simulation only. The browser runs the algorithms; hosting is optional.</footer>
+</main>
+
+<script>
+let steps = [];
+let position = 0;
+let playTimer = null;
+const $ = id => document.getElementById(id);
+
+function parseRefs() {
+  const input = $('refs').value.trim();
+  if (!input) throw new Error('Enter at least one page number.');
+  const refs = input.split(/[,\s]+/).filter(Boolean).map(Number);
+  if (refs.some(n => !Number.isInteger(n) || n < 0))
+    throw new Error('Use non-negative integer page numbers separated by commas or spaces.');
+  if (refs.length > 150) throw new Error('Use 150 or fewer page requests for this demo.');
+  return refs;
+}
+
+function simulate(refs, frameCount, algorithm) {
+  const memory = [];
+  const history = [];
+  const lastUsed = new Map();
+  const fifoQueue = [];
+  let faults = 0, hits = 0;
+
+  refs.forEach((page, i) => {
+    let result = 'HIT';
+    let replaced = '—';
+
+    if (!memory.includes(page)) {
+      result = 'FAULT';
+      faults++;
+
+      if (memory.length < frameCount) {
+        memory.push(page);
+        if (algorithm === 'FIFO') fifoQueue.push(page);
+      } else {
+        let victimIndex = 0;
+
+        if (algorithm === 'FIFO') {
+          const oldestPage = fifoQueue.shift();
+          victimIndex = memory.indexOf(oldestPage);
+        } else if (algorithm === 'LRU') {
+          let oldestUse = Infinity;
+          memory.forEach((residentPage, index) => {
+            const usedAt = lastUsed.has(residentPage) ? lastUsed.get(residentPage) : -1;
+            if (usedAt < oldestUse) {
+              oldestUse = usedAt;
+              victimIndex = index;
+            }
+          });
+        } else if (algorithm === 'OPT') {
+          let farthestNextUse = -1;
+          memory.forEach((residentPage, index) => {
+            const nextUse = refs.indexOf(residentPage, i + 1);
+            const distance = nextUse === -1 ? Infinity : nextUse;
+            if (distance > farthestNextUse) {
+              farthestNextUse = distance;
+              victimIndex = index;
+            }
+          });
+        }
+
+        replaced = memory[victimIndex];
+        memory[victimIndex] = page;
+        if (algorithm === 'FIFO') fifoQueue.push(page);
+      }
+    } else {
+      hits++;
+    }
+
+    lastUsed.set(page, i);
+    history.push({
+      i, page, frames: [...memory], result, replaced, faults, hits
+    });
+  });
+
+  return history;
+}
+
+function runAll() {
+  const refs = parseRefs();
+  const frameCount = Number($('framesCount').value);
+  const results = {};
+  ['FIFO', 'LRU', 'OPT'].forEach(algo => {
+    results[algo] = simulate(refs, frameCount, algo);
+  });
+  return { refs, frameCount, results };
+}
+
+function render() {
+  const current = steps[position - 1];
+  $('stepStat').textContent = `${position} / ${steps.length}`;
+  $('faultStat').textContent = current ? current.faults : 0;
+  $('hitStat').textContent = current ? current.hits : 0;
+  $('rateStat').textContent = current ? `${(current.faults / position * 100).toFixed(1)}%` : '0%';
+
+  $('frames').innerHTML = '';
+  const frameCount = Number($('framesCount').value);
+  for (let i = 0; i < frameCount; i++) {
+    const frame = document.createElement('div');
+    frame.className = 'frame';
+    const value = current && current.frames[i] !== undefined ? current.frames[i] : '—';
+    frame.innerHTML = `<small>Frame ${i + 1}</small><div class="num"></div>`;
+    frame.querySelector('.num').textContent = value;
+    $('frames').appendChild(frame);
+  }
+
+  $('status').innerHTML = current
+    ? `<span class="pill ${current.result === 'HIT' ? 'hit' : 'fault'}">${current.result}</span> <span style="color:#c4d0e3"></span>`
+    : '<span class="note">No requests processed yet.</span>';
+
+  if (current) {
+    $('status').lastElementChild.textContent =
+      `Page ${current.page}${current.result === 'FAULT'
+        ? (current.replaced === '—' ? ' loaded into an empty frame' : ` replaced page ${current.replaced}`)
+        : ' was already in memory'}.`;
+  }
+
+  $('history').innerHTML = '';
+  steps.forEach((item, index) => {
+    const row = document.createElement('tr');
+    if (index === position - 1) row.className = 'current';
+    [index + 1, item.page, item.frames.join(', '), item.result, item.replaced].forEach((value, col) => {
+      const cell = document.createElement('td');
+      if (col === 3) {
+        const pill = document.createElement('span');
+        pill.className = `pill ${value === 'HIT' ? 'hit' : 'fault'}`;
+        pill.textContent = value;
+        cell.appendChild(pill);
+      } else {
+        cell.textContent = value;
+      }
+      row.appendChild(cell);
+    });
+    $('history').appendChild(row);
+  });
+
+  $('prev').disabled = position === 0;
+  $('next').disabled = position === steps.length;
+}
+
+function drawChart(results) {
+  const canvas = $('chart');
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width, height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  const names = ['FIFO', 'LRU', 'OPT'];
+  const values = names.map(name => results[name].filter(s => s.result === 'FAULT').length);
+  const max = Math.max(...values, 1);
+  ctx.font = '16px Arial';
+  ctx.fillStyle = '#dbe7f7';
+  ctx.fillText('Page faults (lower is better)', 18, 25);
+  const baseline = 220, barWidth = 110, gap = 100;
+  const colors = ['#60a5fa', '#34d399', '#c084fc'];
+  names.forEach((name, i) => {
+    const x = 90 + i * (barWidth + gap);
+    const barHeight = values[i] / max * 150;
+    ctx.fillStyle = colors[i];
+    ctx.fillRect(x, baseline - barHeight, barWidth, barHeight);
+    ctx.fillStyle = '#e8eef8';
+    ctx.fillText(String(values[i]), x + barWidth / 2 - 5, baseline - barHeight - 10);
+    ctx.fillText(name, x + 25, baseline + 24);
+  });
+  ctx.strokeStyle = '#52627a';
+  ctx.beginPath();
+  ctx.moveTo(45, baseline);
+  ctx.lineTo(width - 30, baseline);
+  ctx.stroke();
+}
+
+function renderComparison() {
+  const data = runAll();
+  $('comparison').innerHTML = '';
+  ['FIFO', 'LRU', 'OPT'].forEach(algo => {
+    const faults = data.results[algo].filter(item => item.result === 'FAULT').length;
+    const hits = data.refs.length - faults;
+    const card = document.createElement('div');
+    card.className = 'algo';
+    const heading = document.createElement('strong');
+    heading.textContent = algo === 'OPT' ? 'Optimal' : algo;
+    const summary = document.createElement('span');
+    summary.textContent = `${faults} page faults · ${hits} hits · ${(faults / data.refs.length * 100).toFixed(1)}% fault rate`;
+    card.append(heading, summary);
+    $('comparison').appendChild(card);
+  });
+  drawChart(data.results);
+}
+
+function stopPlay() {
+  if (playTimer) clearInterval(playTimer);
+  playTimer = null;
+  $('play').textContent = '▶ Play';
+}
+
+$('run').addEventListener('click', () => {
+  try {
+    stopPlay();
+    const data = runAll();
+    steps = data.results[$('algorithm').value];
+    position = 0;
+    render();
+    renderComparison();
+    $('message').textContent = `Calculated ${steps.length} requests using ${$('algorithm').value}. Use Next to step through.`;
+  } catch (error) {
+    $('message').textContent = error.message;
+  }
+});
+
+$('next').addEventListener('click', () => {
+  position = Math.min(position + 1, steps.length);
+  render();
+});
+$('prev').addEventListener('click', () => {
+  position = Math.max(position - 1, 0);
+  render();
+});
+$('play').addEventListener('click', () => {
+  if (playTimer) {
+    stopPlay();
+    return;
+  }
+  if (!steps.length) $('run').click();
+  playTimer = setInterval(() => {
+    if (position >= steps.length) {
+      stopPlay();
+      return;
+    }
+    position++;
+    render();
+  }, 850);
+  $('play').textContent = 'Ⅱ Pause';
+});
+$('reset').addEventListener('click', () => {
+  stopPlay();
+  position = 0;
+  render();
+  $('message').textContent = 'Reset to the beginning.';
+});
+$('algorithm').addEventListener('change', () => {
+  if (steps.length) $('run').click();
+});
+$('framesCount').addEventListener('change', () => {
+  if (steps.length) $('run').click();
+});
+
+$('run').click();
+</script>
+</body>
+</html>
